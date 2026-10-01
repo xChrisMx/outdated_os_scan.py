@@ -357,5 +357,3 @@ live network scan was attempted):
   independently re-run here — this machine has no masscan/nmap binary and
   no raw-socket privileges available. Same caveat the sibling scripts' own
   READMEs carry for their own untested pieces.
-
-focused on correctness and accuracy over cosmetic cleanup.
