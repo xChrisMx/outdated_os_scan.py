@@ -358,62 +358,6 @@ live network scan was attempted):
   no raw-socket privileges available. Same caveat the sibling scripts' own
   READMEs carry for their own untested pieces.
 
-**2026-10-01 review pass:** a 10-angle review (line-by-line, removed-behavior
-audit against the original `outdatedOS.py`, internal call tracing, Python
-pitfall hunting, live-scan-vs-`--from-csv` equivalence, reuse, simplification,
-efficiency, altitude, conventions) surfaced 32 candidate findings; the most
-severe were fixed directly and independently re-verified by execution
-(targeted unit checks plus a full `--from-csv` round-trip), not just re-read:
-
-1. **(correctness, high)** `_run_nmap_single_host()`'s `subprocess.run()` had
-   no `timeout=` argument, relying solely on nmap's own `--host-timeout` — a
-   genuinely hung nmap process (stuck raw socket, kernel/driver hiccup) could
-   pin a worker thread forever with no recovery, since Ctrl+C's signal handler
-   only runs on the main thread. Fixed with a generous safety-net timeout
-   (3x `--host-timeout` + 30s) via a new `_parse_nmap_time_spec()` helper.
-2. **(correctness, high — found during this fix's own verification, not by
-   the review itself)** `resolve_hostname()`'s `socket.setdefaulttimeout()`
-   wrapper does **not** actually bound `socket.gethostbyaddr()` — confirmed
-   by direct testing against an unresolvable address, which blocked for
-   several seconds regardless of the requested timeout (0.5/1.0/2.0s all
-   measured ~5s). This is a well-known CPython gotcha (those calls hit the
-   OS resolver directly and never consult the socket-level timeout) that
-   also affects the sibling scripts' identical pattern, not something
-   introduced here. Fixed with a real hard wall-clock timeout
-   (`_call_with_hard_timeout()`, a throwaway single-worker
-   `ThreadPoolExecutor` with `future.result(timeout=...)`, orphaning rather
-   than blocking on a thread that doesn't finish in time).
-3. **(correctness, medium)** `read_rows_from_csv()` (`--from-csv`) had no
-   `try`/`except` around the file open/parse — a bad path or non-UTF-8
-   content crashed with a raw traceback. Fixed with a clean `logger.error()`
-   + `return 1`, matching every other I/O failure path.
-4. **(reuse, medium)** `--from-csv` trusted the stored `Risk Category`/
-   `OS Family` columns verbatim instead of re-deriving them from `OS Name`
-   via `classify_deprecated()` — editing `DEPRECATED_OS_RULES` later and
-   reloading an old CSV would keep showing a stale classification forever.
-   Fixed: `OS Name` is now re-classified against the *current* rules table
-   on every CSV load, falling back to the stored columns (with the existing
-   validation/warning) only when `OS Name` matches no current rule at all.
-5. **(correctness, low-medium)** The old `outdatedOS.py`'s per-OS-family and
-   per-OS-name accuracy breakdown (host count, avg/min accuracy %) had no
-   replacement in the new Overview sheet — directly relevant to this tool's
-   whole point of accurate metrics. Fixed: restored as two new "OS Family
-   Breakdown" / "OS Name Breakdown" tables via a new `breakdown_by_field()`
-   helper.
-6. **(correctness, low-medium)** The old script's Phase 1 rate was a
-   deliberately conservative, network-team-coordinated 2000 pps; the new
-   default is 25000 pps (matching the sibling scripts) with that caution not
-   carried forward anywhere. Fixed: the caveat is now documented both inline
-   near `DEFAULT_RATE` and in the module docstring's LIMITATIONS — the
-   default itself was kept at 25000 (matching the already-established
-   sibling convention against this same `SUBNETS` scope), since Phase 1 here
-   is the identical masscan SYN sweep those tools already run.
-7. **(altitude, low)** The "unrecognized Risk Category defaults to HIGH"
-   policy was reimplemented three times (CSV reload, `compute_category_stats`,
-   the Scan Results row-coloring loop) with three different defaulting
-   styles. Consolidated into one `normalize_risk_category()` helper used at
-   all three sites.
-
 Each fix was independently exercised after being applied — a scratch test
 script fed synthetic data through the changed functions directly (confirming,
 e.g., the exact before/after accuracy-parse scenario from finding #2, and a
