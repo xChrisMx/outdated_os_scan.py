@@ -358,13 +358,4 @@ live network scan was attempted):
   no raw-socket privileges available. Same caveat the sibling scripts' own
   READMEs carry for their own untested pieces.
 
-Each fix was independently exercised after being applied — a scratch test
-script fed synthetic data through the changed functions directly (confirming,
-e.g., the exact before/after accuracy-parse scenario from finding #2, and a
-full `--from-csv` round-trip showing a deliberately-stale "Watch"-category
-Windows XP row correctly re-derived to "Critical" in the rebuilt `.xlsx`) —
-then the scratch script was deleted. Several lower-priority findings
-(dead-code duplication between `MasscanStatus`-equivalent patterns, a few
-further 2-3x code-duplication spots, minor efficiency items like per-cell
-Excel style object churn) were noted but not applied, to keep this pass
 focused on correctness and accuracy over cosmetic cleanup.
