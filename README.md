@@ -37,53 +37,6 @@ found in Phase 1, hosts that returned any OS-fingerprint data at all
 ("fingerprinted"), and hosts that returned none ("not fingerprinted" /
 inconclusive) — these are scan-health metrics, not report-body categories.
 
-## Why this rewrite exists: osmatch[0]-only undercounting
-
-The original `outdatedOS.py`'s `parse_outdated()` did:
-
-```python
-osmatch = os_elem.find("osmatch")
-```
-
-Python's `Element.find()` returns only the **first** `<osmatch>` child.
-nmap's XML lists multiple `<osmatch>` candidates per host (up to ~10),
-already sorted by accuracy descending. A host whose single best guess
-**isn't** a deprecated OS, but whose 2nd- or 3rd-best guess (still at or
-above the accuracy threshold) **is** one, was entirely invisible to the
-original tool — undercounting deprecated hosts.
-
-Concrete before/after, for one host nmap reports:
-
-```
-osmatch 1: "Linux 5.4"        accuracy=93   (not deprecated)
-osmatch 2: "Linux 2.6.32"     accuracy=91   (CRITICAL - EOL kernel)
-osmatch 3: "FreeBSD 10.1"     accuracy=90   (not deprecated)
-```
-
-**Before (original script):** `os_elem.find("osmatch")` grabs only
-`"Linux 5.4"` (index 0). It doesn't match any `DEPRECATED_OS_KEYWORDS`
-string, so the host is silently dropped from the report entirely — a
-CRITICAL EOL kernel never shows up.
-
-**After (this script):** `evaluate_osmatches()` walks every `<osmatch>`
-child in document order and takes the first one that is **both** at/above
-`MIN_ACCURACY` **and** matches a `DEPRECATED_OS_RULES` keyword. Since nmap's
-list is already accuracy-sorted, that's always the *highest-accuracy
-qualifying* match — not just whichever happens to match further down the
-list. For the example above, the host now correctly reports `"Linux 2.6.32"`
-/ CRITICAL, with all three osmatch entries preserved in the "Alternate OS
-Guesses" column (`Linux 5.4@93%; Linux 2.6.32@91%; FreeBSD 10.1@90%`) as
-evidence for a human reviewer.
-
-This was also ported from a **batched** to a **per-host** Phase 2: the
-original ran one nmap invocation per 64-host batch (`FINGERPRINT_BATCH`).
-Every sibling script's Phase 2 instead runs one subprocess per host (see
-`ssh_vuln_scan.py`'s `_run_nmap_single_host` / `scan_one_host`), which gives
-per-host progress feedback and per-host retry granularity instead of having
-to re-run (or silently lose) an entire 64-host batch over one bad
-invocation. The console-only `rich` progress display was also replaced with
-the sibling scripts' dependency-free progress line / file+console logger.
-
 ## Why two phases
 
 The configured scope (`SUBNETS` below) includes a `/8`. Pointing per-host
@@ -98,15 +51,15 @@ touches real hosts: a pool of worker threads each run one
 
 ```python
 SUBNETS: List[str] = [
-    "156.141.0.0/16",
-    "156.140.0.0/16",
-    "146.208.0.0/16",
-    "141.184.0.0/16",
-    "141.183.0.0/16",
-    # "141.121.0.0/16",
-    "192.168.0.0/16",
-    "172.16.0.0/12",
-    "10.0.0.0/8",
+    "1.0.0.0/16",
+    "2.0.0.0/16",
+    "3.0.0.0/16",
+    "4.0.0.0/16",
+    "5.0.0.0/16",
+    # "6.0.0.0/16",
+    "7.0.0.0/16",
+    "8.0.0.0/12",
+    "9.0.0.0/8",
 ]
 
 MASSCAN_PORTS = "21,22,23,25,53,80,110,135,139,143,443,445,3389,5900,8080"
